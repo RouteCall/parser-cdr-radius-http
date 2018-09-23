@@ -67,7 +67,7 @@ _err() {
 
 _get_detail_file() {
   local detail_file="$(ls -1 -f ${RADACCT_DIR} | head -3 | tail -1)"
-  if [[ ! -f ${detail_file} ]]; then
+  if [[ ! -f "${RADACCT_DIR}"/"${detail_file}" ]]; then
     return 1
   fi
   mv "${RADACCT_DIR}"/"${detail_file}" "${TMP_FILES}"
