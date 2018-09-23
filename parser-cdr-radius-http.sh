@@ -42,6 +42,7 @@ LOG="/var/log/${SCRIPTNAME}.log"
 NULL="/dev/null"
 URL="https://api.routecall.io/cdr"
 PATH='/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin'
+TMP_FILES='/tmp'
 
 # check of bins
 ${CURL} --version > ${NULL} || exit 1
@@ -63,7 +64,9 @@ _err() {
 }
 
 _get_detail_file() {
-  ls -1 -f ${RADACCT_DIR} | head -3 | tail -1
+  local detail_file="$(ls -1 -f ${RADACCT_DIR} | head -3 | tail -1)"
+  mv ${detail_file} ${TMP_FILES}
+  echo "${TMP_FILES}/$(${BASENAME} ${detail_file})"
 }
 
 _storage_detail() {
@@ -124,17 +127,13 @@ _send_acct_to_http() {
   if [[ $? -eq 0 ]]; then
     _storage_detail "${RADACCT_DIR}/${detail_file}"
   else
+    mv ${detail_file} ${RADACCT_DIR}
     _err "HTTP response: ${response}"
     exit 1
   fi
 }
 
-try_spawn_threads_per_second() {
-  [[ $1 =~ ^[0-9]+$ ]] && requests_per_second=$1 || exit 1
-
-  # sleep for get ${requests_per_second}
-  sleep_in_seconds="$(printf "%.6f" $(echo "scale=6; 1/${requests_per_second}" | bc))"
-
+_try_spawn_threads() {
   # infinite loop
   while true; do
     echo '' > "${LOG}" 2>&1 &
@@ -149,15 +148,15 @@ try_spawn_threads_per_second() {
 _main() {
   # infinite loop
   while true; do
-    try_spawn_threads_per_second "$1"
+    _try_spawn_threads
   done
 }
 
 
 # if argument is int value and if environment variables is a directory, then exec the main function
-if [[ $1 =~ ^[0-9]+$ ]] && [[ -d "${RADACCT_DIR}" ]]; then
+if [[ -d "${RADACCT_DIR}" ]]; then
   RADACCT_DIR=${RADACCT_DIR%/}
-  _main "$1"
+  _main
   exit $?
 elif [[ "$1" == "-h" ]]; then
   _help
