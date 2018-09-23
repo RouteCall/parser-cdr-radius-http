@@ -35,6 +35,8 @@ SED="$(/usr/bin/which sed)"
 SED="${SED:-/usr/bin/sed}"
 BASENAME="$(/usr/bin/which basename)"
 BASENAME="${BASENAME:-/usr/bin/basename}"
+PARALLEL="$(/usr/bin/which parallel)"
+PARALLEL="${PARALLEL:-/usr/local/bin/parallel}"
 
 # global variables
 SCRIPTNAME="$(${BASENAME} "$0")"
@@ -42,10 +44,12 @@ LOG="/var/log/${SCRIPTNAME}.log"
 NULL="/dev/null"
 URL="https://api.routecall.io/cdr"
 PATH='/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin'
+TMP_FILES='/tmp'
 
 # check of bins
 ${CURL} --version > ${NULL} || exit 1
 ${GREP} --version > ${NULL} || exit 1
+${PARALLEL} -h > ${NULL} || exit 1
 [[ -f ${SED} ]] || exit 1
 
 _help() {
@@ -63,20 +67,23 @@ _err() {
 }
 
 _get_detail_file() {
-  ls -1 -f ${RADACCT_DIR} | head -3 | tail -1
+  local detail_file="$(ls -1 -f ${RADACCT_DIR} | head -3 | tail -1)"
+  mv "${RADACCT_DIR}"/"${detail_file}" ${TMP_FILES}
+  echo "${TMP_FILES}/$(${BASENAME} ${detail_file})"
 }
 
 _storage_detail() {
-  if [[ -f "$1" ]]; then
-    f="${1}"
-    mv -v ${f} ${STORAGE_DIR}
+  [[ -f "$1" ]] && f="$1" || exit 1
+  if [[ -d "${STORAGE_DIR}" ]]; then
+    mv -v "${1}" "${STORAGE_DIR}"
   else
-    rm -v ${f}
+    rm -v "${f}"
   fi
+  return 0
 }
 
 _parser_file() {
-  [[ -f ${RADACCT_DIR}/"$1" ]] && f="${RADACCT_DIR}/$1" || exit 1
+  [[ -f "$1" ]] && f="$1" || exit 1
   eval $( \
     cat ${f} | 
       ${GREP} -E 'Asterisk-|NAS-Token' | 
@@ -117,31 +124,26 @@ _send_acct_to_http() {
   detail_file="$(_get_detail_file)"
   json_string=$(_parser_file ${detail_file}) || exit 1
   # when http response is "200 OK": {"job_id":"4e4d7829-bc73-4d87-8590-a0155acd83e5"}
-  response="$(${CURL} -X POST -H "Content-Type: application/json" -d "${json_string}" "${URL}" 2> ${NULL})" 
-  echo "'${response}'" | 
-    ${GREP} -E '\{"job_id":"([[:alnum:]]+-?)+"\}'
+  response="$( \
+    ${CURL} -X POST -H "Content-Type: application/json" -d "${json_string}" "${URL}" 2> ${NULL}
+  )" 
+    echo "${response}" | 
+      ${GREP} -E '\{"job_id":"([[:alnum:]]+-?)+"\}' \
 
-  if [[ $? -eq 0 ]]; then
-    _storage_detail "${RADACCT_DIR}/${detail_file}"
-  else
+  if [[ -z ${response} ]]; then
+    mv ${detail_file} ${RADACCT_DIR}
     _err "HTTP response: ${response}"
     exit 1
   fi
+
+  _storage_detail "${detail_file}"
 }
 
-try_spawn_threads_per_second() {
-  [[ $1 =~ ^[0-9]+$ ]] && requests_per_second=$1 || exit 1
-
-  # sleep for get ${requests_per_second}
-  sleep_in_seconds="$(printf "%.6f" $(echo "scale=6; 1/${requests_per_second}" | bc))"
-
+_try_spawn_threads() {
   # infinite loop
   while true; do
-    echo '' > "${LOG}" 2>&1 &
-    echo '' > "${LOG}" 2>&1 &
     # sub-shell in background
-    ( time _send_acct_to_http ) > "${LOG}" 2>&1 &
-    echo '' > "${LOG}" 2>&1 &
+    ( echo ''; echo ''; time _send_acct_to_http ) > "${LOG}" 2>&1 &
     wait
   done
 }
@@ -149,15 +151,15 @@ try_spawn_threads_per_second() {
 _main() {
   # infinite loop
   while true; do
-    try_spawn_threads_per_second "$1"
+    _try_spawn_threads
   done
 }
 
 
 # if argument is int value and if environment variables is a directory, then exec the main function
-if [[ $1 =~ ^[0-9]+$ ]] && [[ -d "${RADACCT_DIR}" ]]; then
+if [[ -d "${RADACCT_DIR}" ]]; then
   RADACCT_DIR=${RADACCT_DIR%/}
-  _main "$1"
+  _main
   exit $?
 elif [[ "$1" == "-h" ]]; then
   _help

@@ -19,8 +19,7 @@ SLEEP_MON=1
 "${BASEDIR}"/"${SCRIPTNAME}" -h > "${NULL}" || exit 1
 
 _run_parser() {
-  [ -n "$1" ] && aps="$1" || aps=10
-  "${BASEDIR}"/"${SCRIPTNAME}" ${aps} &
+  "${BASEDIR}"/"${SCRIPTNAME}" &
 }
 
 _monitor() {
@@ -29,7 +28,7 @@ _monitor() {
     if ${PGREP} -fq "${SCRIPTNAME}"; then
       continue
     fi
-    _run_parser "$@"
+    _run_parser
   done
 }
 
@@ -44,7 +43,7 @@ if ${PGREP} -fq "safe-${SCRIPTNAME}"; then
   ${PKILL} -f "safe-${SCRIPTNAME}" || exit 1
 fi
 
-_monitor "$@"
+_monitor
 
 exit $?
 
