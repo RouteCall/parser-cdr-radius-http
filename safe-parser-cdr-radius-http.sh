@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# line for run like a daemon
+# RADACCT_DIR='/var/log/radacct/temp/' STORAGE_DIR='/var/log/radacct/detail/' /usr/sbin/daemon -P /var/run/parser-cdr-radius-http.run -r -f /usr/local/bin/safe-parser-cdr-radius-http.sh
+
 # bins
 DIRNAME="$(/usr/bin/which dirname)"
 DIRNAME="${DIRNAME:-/usr/bin/dirname}"

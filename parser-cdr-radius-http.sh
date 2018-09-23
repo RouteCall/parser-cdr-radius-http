@@ -35,8 +35,6 @@ SED="$(/usr/bin/which sed)"
 SED="${SED:-/usr/bin/sed}"
 BASENAME="$(/usr/bin/which basename)"
 BASENAME="${BASENAME:-/usr/bin/basename}"
-PARALLEL="$(/usr/bin/which parallel)"
-PARALLEL="${PARALLEL:-/usr/local/bin/parallel}"
 
 # global variables
 SCRIPTNAME="$(${BASENAME} "$0")"
@@ -49,7 +47,6 @@ TMP_FILES='/tmp'
 # check of bins
 ${CURL} --version > ${NULL} || exit 1
 ${GREP} --version > ${NULL} || exit 1
-${PARALLEL} -h > ${NULL} || exit 1
 [[ -f ${SED} ]] || exit 1
 
 _help() {
@@ -155,15 +152,16 @@ _main() {
   done
 }
 
+if [[ "$1" == "-h" ]]; then
+  _help
+  exit 0
+fi
 
 # if argument is int value and if environment variables is a directory, then exec the main function
 if [[ -d "${RADACCT_DIR}" ]]; then
   RADACCT_DIR=${RADACCT_DIR%/}
   _main
   exit $?
-elif [[ "$1" == "-h" ]]; then
-  _help
-  exit 0
 else
   _help
   exit 1
