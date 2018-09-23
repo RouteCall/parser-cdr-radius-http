@@ -43,6 +43,7 @@ NULL="/dev/null"
 URL="https://api.routecall.io/cdr"
 PATH='/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin'
 TMP_FILES='/tmp'
+SLEEPSECS=3
 
 # check of bins
 ${CURL} --version > ${NULL} || exit 1
@@ -59,18 +60,22 @@ RADACCT_DIR: directory that radius write accts
 STORAGE_DIR: directory for storage permanent. if not set, the file of accounts will be deleted.
 EOF
 }
+
 _err() {
   printf "[$(date +'%Y-%m-%d %H:%M:%S')] [ERROR]: $@\n" | tee -a ${LOG}
 }
 
 _get_detail_file() {
   local detail_file="$(ls -1 -f ${RADACCT_DIR} | head -3 | tail -1)"
-  mv "${RADACCT_DIR}"/"${detail_file}" ${TMP_FILES}
+  if [[ ! -f ${detail_file} ]]; then
+    return 1
+  fi
+  mv "${RADACCT_DIR}"/"${detail_file}" "${TMP_FILES}"
   echo "${TMP_FILES}/$(${BASENAME} ${detail_file})"
 }
 
 _storage_detail() {
-  [[ -f "$1" ]] && f="$1" || exit 1
+  [[ -f "$1" ]] && f="$1" || return 1
   if [[ -d "${STORAGE_DIR}" ]]; then
     mv -v "${1}" "${STORAGE_DIR}"
   else
@@ -80,7 +85,7 @@ _storage_detail() {
 }
 
 _parser_file() {
-  [[ -f "$1" ]] && f="$1" || exit 1
+  [[ -f "$1" ]] && f="$1" || return 1
   eval $( \
     cat ${f} | 
       ${GREP} -E 'Asterisk-|NAS-Token' | 
@@ -118,8 +123,8 @@ _parser_file() {
 }
 
 _send_acct_to_http() {
-  detail_file="$(_get_detail_file)"
-  json_string=$(_parser_file ${detail_file}) || exit 1
+  detail_file="$(_get_detail_file)" || return 1
+  json_string=$(_parser_file ${detail_file}) || return 1
   # when http response is "200 OK": {"job_id":"4e4d7829-bc73-4d87-8590-a0155acd83e5"}
   response="$( \
     ${CURL} -X POST -H "Content-Type: application/json" -d "${json_string}" "${URL}" 2> ${NULL}
@@ -140,7 +145,13 @@ _try_spawn_threads() {
   # infinite loop
   while true; do
     # sub-shell in background
-    ( echo ''; echo ''; time _send_acct_to_http ) > "${LOG}" 2>&1 &
+    time ( \
+      echo ''; echo '';  \
+      _send_acct_to_http || (
+          _err "Don’t have detail files to parse in RADACCT_DIR: ${RADACCT_DIR}"; \
+          sleep ${SLEEPSECS}
+        )
+    ) > "${LOG}" 2>&1 &
     wait
   done
 }
